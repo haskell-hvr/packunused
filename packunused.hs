@@ -233,4 +233,8 @@ readImports fn = do
     extractSpecs (Just (False, impspecs)) = map H.prettyPrint impspecs
     extractSpecs _ = error "unexpected import specs"
 
-    exts = map id [ H.MagicHash, H.PackageImports, H.CPP, H.TypeOperators, H.TypeFamilies {- , H.ExplicitNamespaces -} ]
+#if MIN_VERSION_haskell_src_exts(1,14,0)
+    exts = map H.EnableExtension [ H.MagicHash, H.PackageImports, H.CPP, H.TypeOperators, H.TypeFamilies ]
+#else
+    exts = [ H.MagicHash, H.PackageImports, H.CPP, H.TypeOperators, H.TypeFamilies {- , H.ExplicitNamespaces -} ]
+#endif
