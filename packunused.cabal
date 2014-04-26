@@ -1,5 +1,5 @@
 name:                packunused
-version:             0.1.1.0
+version:             0.1.1.1
 synopsis:            Tool for detecting redundant Cabal package dependencies
 homepage:            https://github.com/hvr/packunused
 bug-reports:         https://github.com/hvr/packunused/issues
@@ -51,7 +51,7 @@ description:
   > executable(packunused)
   > ~~~~~~~~~~~~~~~~~~~~~~
   >
-  > The following package depencencies seem redundant:
+  > The following package dependencies seem redundant:
   >
   >  - criterion-0.6.2.0-9dd4d764629a47662168743b2dfda9bc
   >

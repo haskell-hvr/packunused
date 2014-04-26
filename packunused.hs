@@ -41,7 +41,7 @@ opts = Opts
     &= details helpDesc
 
 helpDesc :: [String]
-helpDesc = [ "Tool to help find redundant build-dependancies in CABAL projects"
+helpDesc = [ "Tool to help find redundant build-dependencies in CABAL projects"
            , ""
            , "In order to use this package you should set up the package as follows, before executing 'packunused':"
            , ""
@@ -164,10 +164,10 @@ main = do
 
         if null unused
           then do
-            putStrLn "no redundant packages depencencies found"
+            putStrLn "no redundant packages dependencies found"
             putStrLn ""
           else do
-            putStrLn "The following package depencencies seem redundant:"
+            putStrLn "The following package dependencies seem redundant:"
             putStrLn ""
             forM_ unused $ \pkg' -> putStrLn $ " - " ++ display pkg'
             putStrLn ""
@@ -263,4 +263,4 @@ readImports outDir fn = do
 
 
 whenM :: Monad m => m Bool -> m () -> m ()
-whenM test action = test >>= \t -> if t then action else return ()
+whenM test = (test >>=) . flip when

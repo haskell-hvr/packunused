@@ -1,3 +1,7 @@
+# 0.1.1.1
+
+ - Minor typo in output messages fixed
+
 # 0.1.1.0
 
  - Update to support `Cabal-1.18`/`Cabal-1.20`, GHC 7.8.1+, and `haskell-src-exts-1.15`
