@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, DeriveDataTypeable, RecordWildCards #-}
+{-# LANGUAGE CPP, RecordWildCards #-}
 
 module Main where
 
@@ -7,63 +7,80 @@ import           Data.IORef
 import           Data.List
 import           Data.List.Split (splitOn)
 import           Data.Maybe
+import           Data.Monoid
 import           Data.Version (Version(Version), showVersion)
 import           Distribution.InstalledPackageInfo (exposedModules, installedPackageId)
 import           Distribution.ModuleName (ModuleName)
-import           Distribution.Simple.Compiler
 import qualified Distribution.ModuleName as MN
 import           Distribution.Package (InstalledPackageId(..), packageId, pkgName)
 import qualified Distribution.PackageDescription as PD
+import           Distribution.Simple.Compiler
 import           Distribution.Simple.Configure (localBuildInfoFile, getPersistBuildConfig, checkPersistBuildConfigOutdated)
 import           Distribution.Simple.LocalBuildInfo
 import           Distribution.Simple.PackageIndex (lookupInstalledPackageId)
 import           Distribution.Simple.Utils (cabalVersion)
 import           Distribution.Text (display)
 import qualified Language.Haskell.Exts as H
-import           System.Console.CmdArgs.Implicit
+import           Options.Applicative
+import           Options.Applicative.Help.Pretty (Doc)
+import qualified Options.Applicative.Help.Pretty as P
 import           System.Directory (getModificationTime, getDirectoryContents, doesDirectoryExist, doesFileExist)
 import           System.Exit (exitFailure)
 import           System.FilePath ((</>))
 
 import           Paths_packunused (version)
 
--- |CLI Options
+-- | CLI Options
 data Opts = Opts
     { ignoreEmptyImports :: Bool
     , ignoreMainModule :: Bool
     , ignoredPackages :: [String]
-    } deriving (Show, Data, Typeable)
+    } deriving (Show)
 
-opts :: Opts
-opts = Opts
-    { ignoreEmptyImports = def &= name "ignore-empty-imports" &= explicit
-    , ignoreMainModule   = def &= name "ignore-main-module" &= explicit
-    , ignoredPackages    = def &= name "ignore-package" &= explicit &= typ "PACKAGE" &= help "ignore the specfied package in the report"
-    }
-    &= program "packunused"
-    &= summary ("packunused " ++ showVersion version ++ " (using Cabal "++ showVersion cabalVersion ++ ")")
-    &= details helpDesc
+opts :: Parser Opts
+opts = Opts <$> switch (long "ignore-empty-imports" <> help "ignore empty .imports files")
+            <*> switch (long "ignore-main-module" <> help "ignore Main modules")
+            <*> many (strOption (long "ignore-package" <> metavar "PKG" <>
+                                 help "ignore the specfied package in the report"))
 
-helpDesc :: [String]
-helpDesc = [ "Tool to help find redundant build-dependencies in CABAL projects"
-           , ""
-           , "In order to use this package you should set up the package as follows, before executing 'packunused':"
-           , ""
-           , " cabal clean"
-           , " rm *.imports      # (only needed for GHC<7.8)"
-           , " cabal configure -O0 --disable-library-profiling"
-           , " cabal build --ghc-option=-ddump-minimal-imports"
-           , " packunused"
-           , ""
-           , "Note: The 'cabal configure' command above only tests the default package configuration." ++
-             "You might need to repeat the process with different flags added to the 'cabal configure' step " ++
-             "(such as '--enable-tests' or '--enable-benchmark' or custom cabal flags) " ++
-             "to make sure to check all configurations"
-           ]
+helpFooter :: Doc
+helpFooter = mconcat
+    [ P.text "Tool to help find redundant build-dependencies in CABAL projects", P.linebreak
+    , P.hardline
+    , para $ "In order to use this tool you should set up the package to be analyzed as follows, " ++
+             "before executing 'packunused':", P.linebreak
+
+    , P.hardline
+    , P.indent 2 $ P.vcat $ P.text <$>
+      [ "cabal clean"
+      , "rm *.imports        # (only needed for GHC<7.8)"
+      , "cabal configure -O0 --disable-library-profiling"
+      , "cabal build --ghc-option=-ddump-minimal-imports"
+      , "packunused"
+      ]
+    , P.linebreak, P.hardline
+    , P.text "Note:" P.<+> P.align
+      (para $ "The 'cabal configure' command above only tests the default package configuration. " ++
+              "You might need to repeat the process with different flags added to the 'cabal configure' step " ++
+              "(such as '--enable-tests' or '--enable-benchmark' or custom cabal flags) " ++
+              "to make sure to check all configurations")
+    , P.linebreak, P.hardline
+    , P.text "Report bugs to https://github.com/hvr/packunused/issues"
+    ]
+  where
+    para = P.fillSep . map P.text . words
+
+helpHeader :: String
+helpHeader = "packunused " ++ showVersion version ++
+             " (using Cabal "++ showVersion cabalVersion ++ ")"
 
 main :: IO ()
 main = do
-    Opts {..} <- cmdArgs opts
+    Opts {..} <- execParser $
+                 info (helper <*> opts)
+                      (header helpHeader <>
+                       fullDesc <>
+                       footerDoc (Just helpFooter))
 
     -- print opts'
 
@@ -187,8 +204,7 @@ main = do
             putStrLn ""
             writeIORef ok False
 
-    aok <- readIORef ok
-    unless aok exitFailure
+    whenM (not <$> readIORef ok) exitFailure
   where
     distPref = "./dist"
 

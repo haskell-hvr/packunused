@@ -65,13 +65,13 @@ source-repository head
 executable packunused
   main-is:             packunused.hs
   default-language:    Haskell2010
-  other-extensions:    CPP, DeriveDataTypeable, RecordWildCards
+  other-extensions:    CPP, RecordWildCards
   ghc-options:         -Wall -fwarn-tabs -fno-warn-unused-do-bind
   build-depends:
-    base              >=4.5  && <4.8,
-    Cabal             >=1.14 && <1.21,
-    cmdargs           ==0.10.*,
-    directory         >=1.1  && <1.3,
-    filepath          ==1.3.*,
-    haskell-src-exts  >=1.13 && <1.16,
-    split             ==0.2.*
+    base                 >=4.5  && <4.8,
+    Cabal                >=1.14 && <1.21,
+    optparse-applicative == 0.8.*,
+    directory            >=1.1  && <1.3,
+    filepath             ==1.3.*,
+    haskell-src-exts     >=1.13 && <1.16,
+    split                ==0.2.*
