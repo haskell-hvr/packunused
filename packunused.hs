@@ -257,10 +257,11 @@ readImports outDir fn = do
     extractSpecs (Just (False, impspecs)) = map H.prettyPrint impspecs
     extractSpecs _ = error "unexpected import specs"
 
-    parseImportsFile = H.parseFileContentsWithMode (H.defaultParseMode { H.extensions = exts, H.parseFilename = outDir </> fn }) . stripExplicitNamespaces
+    parseImportsFile = H.parseFileContentsWithMode (H.defaultParseMode { H.extensions = exts, H.parseFilename = outDir </> fn }) . stripExplicitNamespaces . stripSafe
 
     -- hack to remove -XExplicitNamespaces until haskell-src-exts supports that
     stripExplicitNamespaces = unwords . splitOn " type "
+    stripSafe = unwords . splitOn " safe "
 
 #if MIN_VERSION_haskell_src_exts(1,14,0)
     exts = map H.EnableExtension [ H.MagicHash, H.PackageImports, H.CPP, H.TypeOperators, H.TypeFamilies {- , H.ExplicitNamespaces -} ]
