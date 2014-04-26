@@ -5,9 +5,10 @@ module Main where
 import           Control.Monad
 import           Data.List
 import           Data.Maybe
-import           Data.Version (showVersion)
+import           Data.Version (Version(Version), showVersion)
 import           Distribution.InstalledPackageInfo (exposedModules, installedPackageId)
 import           Distribution.ModuleName (ModuleName)
+import           Distribution.Simple.Compiler
 import qualified Distribution.ModuleName as MN
 import           Distribution.Package (InstalledPackageId(..))
 import qualified Distribution.PackageDescription as PD
@@ -18,16 +19,11 @@ import           Distribution.Simple.Utils (cabalVersion)
 import           Distribution.Text (display)
 import qualified Language.Haskell.Exts as H
 import           System.Console.CmdArgs.Implicit
-import           System.Directory (getModificationTime, getDirectoryContents, doesFileExist)
+import           System.Directory (getModificationTime, getDirectoryContents, doesDirectoryExist, doesFileExist)
 import           System.Exit (exitFailure)
 import           System.FilePath ((</>))
 
 import           Paths_packunused (version)
-
-#if !MIN_VERSION_Cabal(1,16,0)
-componentBuildInfo :: Component -> PD.BuildInfo
-componentBuildInfo = foldComponent PD.libBuildInfo PD.buildInfo PD.testBuildInfo PD.benchmarkBuildInfo
-#endif
 
 -- |CLI Options
 data Opts = Opts
@@ -37,8 +33,8 @@ data Opts = Opts
 
 opts :: Opts
 opts = Opts
-    { ignoreEmptyImports = def &= explicit &= name "ignore-empty-imports"
-    , ignoreMainModule   = def &= explicit &= name "ignore-main-module"
+    { ignoreEmptyImports = def &= name "ignore-empty-imports" &= explicit
+    , ignoreMainModule   = def &= name "ignore-main-module" &= explicit
     }
     &= program "packunused"
     &= summary ("packunused " ++ showVersion version ++ " (using Cabal "++ showVersion cabalVersion ++ ")")
@@ -50,7 +46,7 @@ helpDesc = [ "Tool to help find redundant build-dependancies in CABAL projects"
            , "In order to use this package you should set up the package as follows, before executing 'packunused':"
            , ""
            , " cabal clean"
-           , " rm *.imports"
+           , " rm *.imports      # (only needed for GHC<7.8)"
            , " cabal configure -O0 --disable-library-profiling"
            , " cabal build --ghc-option=-ddump-minimal-imports"
            , " packunused"
@@ -75,7 +71,6 @@ main = do
     lbiMTime <- getModificationTime (localBuildInfoFile distPref)
     lbi <- getPersistBuildConfig distPref
 
-    let cbo = compBuildOrder lbi
 
     -- minory sanity checking
     case pkgDescrFile lbi of
@@ -84,53 +79,49 @@ main = do
             res <- checkPersistBuildConfigOutdated distPref pkgDescFile
             when res $ putStrLn "*WARNING* outdated config-data -- please re-configure"
 
+    let cbo = compBuildOrder lbi
+        pkg = localPkgDescr lbi
+        ipkgs = installedPkgs lbi
+
+    importsInOutDir <- case compilerId (compiler lbi) of
+        CompilerId GHC (Version v _) | v >= [7,8] -> return True
+        CompilerId GHC _ -> return False
+        CompilerId _ _ -> putStrLn "*WARNING* non-GHC compiler detected" >> return False
+
     putHeading "detected package components"
 
-    when (isJust $ libraryConfig lbi) $
+    when (isJust $ PD.library pkg) $
         putStrLn $ " - library" ++ [ '*' | CLibName `notElem` cbo ]
-    unless (null $ executableConfigs lbi) $
+    unless (null $ PD.executables pkg) $
         putStrLn $ " - executable(s): " ++ unwords [ n ++ [ '*' | CExeName n `notElem` cbo ]
-                                                   | (n,_) <- executableConfigs lbi ]
-    unless (null $ testSuiteConfigs lbi) $
+                                                   | PD.Executable { exeName = n } <- PD.executables pkg ]
+    unless (null $ PD.testSuites pkg) $
         putStrLn $ " - testsuite(s): " ++ unwords [ n ++ [ '*' | CTestName n `notElem` cbo ]
-                                                  | (n,_) <- testSuiteConfigs lbi ]
-    unless (null $ benchmarkConfigs lbi) $
+                                                  | PD.TestSuite { testName = n } <- PD.testSuites pkg ]
+    unless (null $ PD.benchmarks pkg) $
         putStrLn $ " - benchmark(s): " ++ unwords [ n ++ [ '*' | CBenchName n `notElem` cbo ]
-                                                  | (n,_) <- benchmarkConfigs lbi ]
+                                                  | PD.Benchmark { benchmarkName = n} <- PD.benchmarks pkg ]
+
     putStrLn ""
     putStrLn "(component names suffixed with '*' are not configured to be built)"
     putStrLn ""
 
-    let ipkgs = installedPkgs lbi
+    ----------------------------------------------------------------------------
 
-    files <- filterM doesFileExist =<< liftM (sort . filter (isSuffixOf ".imports")) (getDirectoryContents ".")
-
-    when (null files) $
-        fail "no .imports files found -- has 'cabal build' been performed yet? (see also --help)"
-
-    -- .import files generated after lbi
-    files' <- filterM (liftM (> lbiMTime) . getModificationTime) files
-
-    unless (files' == files) $ do
-        putStrLn "*WARNING* some possibly outdated .imports were found (please consider removing/rebuilding them):"
-        forM_ (files \\ files') $ \fn -> putStrLn $ " - " ++ fn
-        putStrLn ""
-
-    -- when (null files') $
-    --    fail "no up-to-date .imports files found -- please perform 'cabal build'"
-
-    -- import dependancy graph read in via '.imports' files
-    mods <- mapM readImports files
-
-    let multiMain = length cbo > libCount+1
-        libCount = if CLibName `elem` cbo then 1 else 0
+    -- GHC prior to 7.8.1 emitted .imports file in $PWD and therefore would risk overwriting files
+    let multiMainIssue = not importsInOutDir && length (filter (/= CLibName) cbo) > 1
 
     -- handle stanzas
-    withComponentsLBI (localPkgDescr lbi) lbi $ \c clbi -> do
+    withAllComponentsInBuildOrder pkg lbi $ \c clbi -> do
         let (n,n2,cmods) = componentNameAndModules (not ignoreMainModule) c
+            outDir = if null n2 then buildDir lbi else buildDir lbi </> n2 </> n2++"-tmp"
+            outDir' = if importsInOutDir then outDir else  "."
 
-            -- imported modules by component
-            allmods | ignoreEmptyImports  = nub [ m | (mn, imps) <- mods
+        -- import dependancy graph read in via '.imports' files
+        mods <- mapM (readImports outDir') =<< findImportsFiles outDir' lbiMTime
+
+        -- imported modules by component
+        let allmods | ignoreEmptyImports  = nub [ m | (mn, imps) <- mods
                                                     , mn `elem` cmods
                                                     , (m,_:_) <- imps
                                                     ]
@@ -140,9 +131,6 @@ main = do
                                                     ]
 
             pkgs = componentPackageDeps clbi
-
-            mainObj | null n2   = ""
-                    | otherwise = buildDir lbi </> n2 </> n2++"-tmp" </> "Main.o"
 
             ipinfos = [ fromMaybe (error (show ipkgid)) $ lookupInstalledPackageId ipkgs ipkgid
                       | (ipkgid@(InstalledPackageId i), _) <- pkgs
@@ -165,11 +153,11 @@ main = do
             forM_ missingMods $ \m -> putStrLn $ " - " ++ display m
             putStrLn ""
 
-        when (not ignoreMainModule && multiMain && not (compIsLib c)) $ do
+        when (not ignoreMainModule && multiMainIssue && not (compIsLib c)) $ do
             putStrLn "*WARNING* multiple non-library components detected"
-            putStrLn "  result may be unreliable if there are multiple non-library components because the 'Main.imports' file gets overwritten. Try"
+            putStrLn "  result may be unreliable if there are multiple non-library components because the 'Main.imports' file gets overwritten with GHC prior to version 7.8.1, try"
             putStrLn ""
-            putStrLn $ "  rm "++mainObj++"; cabal build --ghc-option=-ddump-minimal-imports; packunused"
+            putStrLn $ "  rm "++(outDir </> "Main.h")++"; cabal build --ghc-option=-ddump-minimal-imports; packunused"
             putStrLn ""
             putStrLn "  to get a more accurate result for this component."
             putStrLn ""
@@ -181,7 +169,7 @@ main = do
           else do
             putStrLn "The following package depencencies seem redundant:"
             putStrLn ""
-            forM_ unused $ \pkg -> putStrLn $ " - " ++ display pkg
+            forM_ unused $ \pkg' -> putStrLn $ " - " ++ display pkg'
             putStrLn ""
 
     return ()
@@ -190,6 +178,36 @@ main = do
 
     compIsLib CLib {} = True
     compIsLib _       = False
+
+    findImportsFiles outDir lbiMTime = do
+        whenM (not `fmap` doesDirectoryExist outDir) $
+            fail $"output-dir " ++ show outDir ++ " does not exist; -- has 'cabal build' been performed yet? (see also 'packunused --help')"
+
+        files <- filterM (doesFileExist . (outDir</>)) =<<
+                 liftM (sort . filter (isSuffixOf ".imports"))
+                 (getDirectoryContents outDir)
+
+        when (null files) $
+            fail $ "no .imports files found in " ++ show outDir ++ " -- has 'cabal build' been performed yet? (see also 'packunused --help')"
+
+        -- .import files generated after lbi
+        files' <- filterM (liftM (> lbiMTime) . getModificationTime . (outDir</>)) files
+
+        unless (files' == files) $ do
+            putStrLn "*WARNING* some possibly outdated .imports were found (please consider removing/rebuilding them):"
+            forM_ (files \\ files') $ \fn -> putStrLn $ " - " ++ fn
+            putStrLn ""
+
+        -- when (null files') $
+        --    fail "no up-to-date .imports files found -- please perform 'cabal build'"
+
+        return files
+
+#if MIN_VERSION_Cabal(1,18,0)
+    compBuildOrder = map fst . allComponentsInBuildOrder
+#else
+    withAllComponentsInBuildOrder = withComponentsLBI
+#endif
 
 componentNameAndModules :: Bool -> Component -> (String, String, [ModuleName])
 componentNameAndModules addMainMod c  = (n, n2, m)
@@ -204,6 +222,10 @@ componentNameAndModules addMainMod c  = (n, n2, m)
 
     mainModName = MN.fromString "Main"
 
+#if !MIN_VERSION_Cabal(1,16,0)
+    componentBuildInfo = foldComponent PD.libBuildInfo PD.buildInfo PD.testBuildInfo PD.benchmarkBuildInfo
+#endif
+
 putHeading :: String -> IO ()
 putHeading s = do
     putStrLn s
@@ -211,14 +233,14 @@ putHeading s = do
     putStrLn ""
 
 -- empty symbol list means '()'
-readImports :: FilePath -> IO (ModuleName, [(ModuleName, [String])])
-readImports fn = do
+readImports :: FilePath -> FilePath -> IO (ModuleName, [(ModuleName, [String])])
+readImports outDir fn = do
     unless (".imports" `isSuffixOf` fn) $
         fail ("argument "++show fn++" doesn't have .imports extension")
 
     let m = MN.fromString $ take (length fn - length ".imports") fn
 
-    parseRes <- H.parseFileWithExts exts fn
+    parseRes <- H.parseFileWithExts exts (outDir </> fn)
     case parseRes of
         (H.ParseOk (H.Module _ _ _ _ _ imps _)) -> do
             let imps' = [ (MN.fromString mn, extractSpecs (H.importSpecs imp))
@@ -238,3 +260,7 @@ readImports fn = do
 #else
     exts = [ H.MagicHash, H.PackageImports, H.CPP, H.TypeOperators, H.TypeFamilies {- , H.ExplicitNamespaces -} ]
 #endif
+
+
+whenM :: Monad m => m Bool -> m () -> m ()
+whenM test action = test >>= \t -> if t then action else return ()
