@@ -1,5 +1,12 @@
 # 0.1.1.1
 
+ - New option `--ignore-package` to white-list redundant packages by name
+ - Exit with a non-zero status code if (non-ignored) redundant dependencies are found
+ - Fake support for parsing `-XSafeHaskell` and `-XExplicitNamespaces` in .imports files
+ - Switched from `cmdargs` to `optparse-applicative`
+
+# 0.1.1.1
+
  - Minor typo in output messages fixed
 
 # 0.1.1.0
