@@ -11,7 +11,7 @@ import           Distribution.InstalledPackageInfo (exposedModules, installedPac
 import           Distribution.ModuleName (ModuleName)
 import           Distribution.Simple.Compiler
 import qualified Distribution.ModuleName as MN
-import           Distribution.Package (InstalledPackageId(..))
+import           Distribution.Package (InstalledPackageId(..), packageId, pkgName)
 import qualified Distribution.PackageDescription as PD
 import           Distribution.Simple.Configure (localBuildInfoFile, getPersistBuildConfig, checkPersistBuildConfigOutdated)
 import           Distribution.Simple.LocalBuildInfo
@@ -30,12 +30,14 @@ import           Paths_packunused (version)
 data Opts = Opts
     { ignoreEmptyImports :: Bool
     , ignoreMainModule :: Bool
+    , ignoredPackages :: [String]
     } deriving (Show, Data, Typeable)
 
 opts :: Opts
 opts = Opts
     { ignoreEmptyImports = def &= name "ignore-empty-imports" &= explicit
     , ignoreMainModule   = def &= name "ignore-main-module" &= explicit
+    , ignoredPackages    = def &= name "ignore-package" &= explicit &= typ "PACKAGE" &= help "ignore the specfied package in the report"
     }
     &= program "packunused"
     &= summary ("packunused " ++ showVersion version ++ " (using Cabal "++ showVersion cabalVersion ++ ")")
@@ -138,8 +140,10 @@ main = do
                       , not ("-inplace" `isSuffixOf` i)
                       ]
 
+            (ignored, unignored) = partition (\x -> display (pkgName $ packageId x) `elem` ignoredPackages) ipinfos
+
             unused = [ installedPackageId ipinfo
-                     | ipinfo <- ipinfos
+                     | ipinfo <- unignored
                      , let expmods = exposedModules ipinfo
                      , not (any (`elem` allmods) expmods)
                      ]
@@ -161,6 +165,11 @@ main = do
             putStrLn $ "  rm "++(outDir </> "Main.h")++"; cabal build --ghc-option=-ddump-minimal-imports; packunused"
             putStrLn ""
             putStrLn "  to get a more accurate result for this component."
+            putStrLn ""
+
+        unless (null ignored) $ do
+            let k = length ignored
+            putStrLn $ "Ignoring " ++ show k ++ " package" ++ (if k == 1 then "" else "s")
             putStrLn ""
 
         if null unused
