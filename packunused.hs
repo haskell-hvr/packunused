@@ -3,6 +3,7 @@
 module Main where
 
 import           Control.Monad
+import           Data.IORef
 import           Data.List
 import           Data.List.Split (splitOn)
 import           Data.Maybe
@@ -114,6 +115,9 @@ main = do
     -- GHC prior to 7.8.1 emitted .imports file in $PWD and therefore would risk overwriting files
     let multiMainIssue = not importsInOutDir && length (filter (/= CLibName) cbo) > 1
 
+
+    ok <- newIORef True
+
     -- handle stanzas
     withAllComponentsInBuildOrder pkg lbi $ \c clbi -> do
         let (n,n2,cmods) = componentNameAndModules (not ignoreMainModule) c
@@ -181,8 +185,10 @@ main = do
             putStrLn ""
             forM_ unused $ \pkg' -> putStrLn $ " - " ++ display pkg'
             putStrLn ""
+            writeIORef ok False
 
-    return ()
+    aok <- readIORef ok
+    unless aok exitFailure
   where
     distPref = "./dist"
 
