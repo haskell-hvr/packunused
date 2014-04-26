@@ -4,6 +4,7 @@ module Main where
 
 import           Control.Monad
 import           Data.List
+import           Data.List.Split (splitOn)
 import           Data.Maybe
 import           Data.Version (Version(Version), showVersion)
 import           Distribution.InstalledPackageInfo (exposedModules, installedPackageId)
@@ -240,25 +241,31 @@ readImports outDir fn = do
 
     let m = MN.fromString $ take (length fn - length ".imports") fn
 
-    parseRes <- H.parseFileWithExts exts (outDir </> fn)
-    case parseRes of
+    contents <- readFile (outDir </> fn)
+    case parseImportsFile contents of
         (H.ParseOk (H.Module _ _ _ _ _ imps _)) -> do
             let imps' = [ (MN.fromString mn, extractSpecs (H.importSpecs imp))
                         | imp <- imps, let H.ModuleName mn = H.importModule imp ]
 
             return (m, imps')
-        H.ParseFailed {} -> do
-            print parseRes
+        H.ParseFailed loc msg -> do
+            putStrLn "*ERROR* failed to parse .imports file"
+            putStrLn $ H.prettyPrint loc ++ ": " ++ msg
             exitFailure
 
   where
     extractSpecs (Just (False, impspecs)) = map H.prettyPrint impspecs
     extractSpecs _ = error "unexpected import specs"
 
+    parseImportsFile = H.parseFileContentsWithMode (H.defaultParseMode { H.extensions = exts, H.parseFilename = outDir </> fn }) . stripExplicitNamespaces
+
+    -- hack to remove -XExplicitNamespaces until haskell-src-exts supports that
+    stripExplicitNamespaces = unwords . splitOn " type "
+
 #if MIN_VERSION_haskell_src_exts(1,14,0)
-    exts = map H.EnableExtension [ H.MagicHash, H.PackageImports, H.CPP, H.TypeOperators, H.TypeFamilies ]
+    exts = map H.EnableExtension [ H.MagicHash, H.PackageImports, H.CPP, H.TypeOperators, H.TypeFamilies {- , H.ExplicitNamespaces -} ]
 #else
-    exts = [ H.MagicHash, H.PackageImports, H.CPP, H.TypeOperators, H.TypeFamilies {- , H.ExplicitNamespaces -} ]
+    exts = [ H.MagicHash, H.PackageImports, H.CPP, H.TypeOperators, H.TypeFamilies ]
 #endif
 
 
