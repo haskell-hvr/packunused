@@ -10,6 +10,9 @@ import           Data.Maybe
 import           Data.Monoid
 import           Data.Version (Version(Version), showVersion)
 import           Distribution.InstalledPackageInfo (exposedModules, installedPackageId)
+#if MIN_VERSION_Cabal(1,21,0)
+import           Distribution.InstalledPackageInfo (exposedName)
+#endif
 import           Distribution.ModuleName (ModuleName)
 import qualified Distribution.ModuleName as MN
 import           Distribution.Package (InstalledPackageId(..), packageId, pkgName)
@@ -165,7 +168,11 @@ main = do
 
             unused = [ installedPackageId ipinfo
                      | ipinfo <- unignored
+#if MIN_VERSION_Cabal(1,21,0)
+                     , let expmods = map exposedName $ exposedModules ipinfo
+#else
                      , let expmods = exposedModules ipinfo
+#endif
                      , not (any (`elem` allmods) expmods)
                      ]
 
