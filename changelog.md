@@ -1,4 +1,8 @@
-# 0.1.1.1
+# 0.1.1.3
+
+ - Allow `optparse-applicative-0.11.*` and `haskell-src-exts-1.16.*`
+
+# 0.1.1.2
 
  - New option `--ignore-package` to white-list redundant packages by name
  - Exit with a non-zero status code if (non-ignored) redundant dependencies are found
