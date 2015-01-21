@@ -68,7 +68,7 @@ executable packunused
   other-extensions:    CPP, RecordWildCards
   ghc-options:         -Wall -fwarn-tabs -fno-warn-unused-do-bind
   build-depends:
-    base                 >=4.5  && <4.8,
+    base                 >=4.5  && <4.9,
     Cabal                >=1.14 && <1.21,
     optparse-applicative >=0.8  && <0.12,
     directory            >=1.1  && <1.3,
