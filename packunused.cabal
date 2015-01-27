@@ -1,5 +1,5 @@
 name:                packunused
-version:             0.1.1.3
+version:             0.1.1.4
 synopsis:            Tool for detecting redundant Cabal package dependencies
 homepage:            https://github.com/hvr/packunused
 bug-reports:         https://github.com/hvr/packunused/issues

@@ -1,3 +1,7 @@
+# 0.1.1.4
+
+ - Add support for `Cabal-1.22.*` and `base-4.8.*`
+
 # 0.1.1.3
 
  - Allow `optparse-applicative-0.11.*` and `haskell-src-exts-1.16.*`
