@@ -31,6 +31,11 @@ description:
   > cabal build --ghc-option=-ddump-minimal-imports
   > packunused
   .
+  Users of @stack@ should run:
+  > stack clean
+  > stack build --fast --no-library-profiling --ghc-options -ddump-minimal-imports
+  > packunused
+  .
   The @-O0 --disable-library-profiling@ options are just to speed up
   compilation. In some cases you might want to pass additional options
   to the @configure@ step, such as @--enable-benchmark@ or
@@ -74,4 +79,6 @@ executable packunused
     directory            >=1.1  && <1.3,
     filepath             >=1.3  && <1.5,
     haskell-src-exts     >=1.13 && <1.17,
-    split                ==0.2.*
+    process              >=1.2  && < 1.3,
+    split                ==0.2.*,
+    text                 >=1.2  && < 1.3

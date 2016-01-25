@@ -8,6 +8,7 @@ import           Data.List
 import           Data.List.Split (splitOn)
 import           Data.Maybe
 import           Data.Monoid
+import qualified Data.Text as T
 import           Data.Version (Version(Version), showVersion)
 import           Distribution.InstalledPackageInfo (exposedModules, installedPackageId)
 #if MIN_VERSION_Cabal(1,21,0)
@@ -30,6 +31,7 @@ import qualified Options.Applicative.Help.Pretty as P
 import           System.Directory (getModificationTime, getDirectoryContents, doesDirectoryExist, doesFileExist)
 import           System.Exit (exitFailure)
 import           System.FilePath ((</>))
+import           System.Process (readProcess)
 
 import           Paths_packunused (version)
 
@@ -86,6 +88,8 @@ main = do
                        footerDoc (Just helpFooter))
 
     -- print opts'
+
+    distPref <- getDistDir
 
     lbiExists <- doesFileExist (localBuildInfoFile distPref)
     unless lbiExists $ do
@@ -213,8 +217,6 @@ main = do
 
     whenM (not <$> readIORef ok) exitFailure
   where
-    distPref = "./dist"
-
     compIsLib CLib {} = True
     compIsLib _       = False
 
@@ -247,6 +249,14 @@ main = do
 #else
     withAllComponentsInBuildOrder = withComponentsLBI
 #endif
+
+getDistDir :: IO String
+getDistDir = do
+    isStack <- doesDirectoryExist ".stack-work"
+    if isStack then
+        liftM (T.unpack . T.strip . T.pack) $ readProcess "stack" ["path", "--dist-dir"] ""
+    else
+        return "./dist"
 
 componentNameAndModules :: Bool -> Component -> (String, String, [ModuleName])
 componentNameAndModules addMainMod c  = (n, n2, m)
