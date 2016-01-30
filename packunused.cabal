@@ -31,6 +31,13 @@ description:
   > cabal build --ghc-option=-ddump-minimal-imports
   > packunused
   .
+  Alternatively:
+  .
+  > # stack setup --upgrade-cabal'  # necessary only when stack's global "Cabal" installation is out of date
+  > stack clean
+  > stack build --ghc-options '-ddump-minimal-imports -O0'
+  > packunused
+  .
   The @-O0 --disable-library-profiling@ options are just to speed up
   compilation. In some cases you might want to pass additional options
   to the @configure@ step, such as @--enable-benchmark@ or
@@ -70,8 +77,9 @@ executable packunused
   build-depends:
     base                 >=4.5  && <4.9,
     Cabal                >=1.14 && <1.23,
-    optparse-applicative >=0.8  && <0.12,
+    optparse-applicative >=0.8,
     directory            >=1.1  && <1.3,
     filepath             >=1.3  && <1.5,
-    haskell-src-exts     >=1.13 && <1.17,
-    split                ==0.2.*
+    haskell-src-exts     >=1.13,
+    split                ==0.2.*,
+    process

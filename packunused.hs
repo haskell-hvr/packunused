@@ -30,6 +30,7 @@ import qualified Options.Applicative.Help.Pretty as P
 import           System.Directory (getModificationTime, getDirectoryContents, doesDirectoryExist, doesFileExist)
 import           System.Exit (exitFailure)
 import           System.FilePath ((</>))
+import           System.Process
 
 import           Paths_packunused (version)
 
@@ -77,6 +78,13 @@ helpHeader :: String
 helpHeader = "packunused " ++ showVersion version ++
              " (using Cabal "++ showVersion cabalVersion ++ ")"
 
+chooseDistPref :: IO String
+chooseDistPref = do
+  useStack <- doesFileExist "stack.yaml"
+  if useStack
+    then takeWhile (/= '\n') <$> readProcess "stack" (words "path --dist-dir") ""
+    else return "dist"
+
 main :: IO ()
 main = do
     Opts {..} <- execParser $
@@ -87,12 +95,24 @@ main = do
 
     -- print opts'
 
+    distPref <- chooseDistPref
+
     lbiExists <- doesFileExist (localBuildInfoFile distPref)
     unless lbiExists $ do
         putStrLn "*ERROR* package not properly configured yet or not in top-level CABAL project folder; see --help for more details"
         exitFailure
 
     lbiMTime <- getModificationTime (localBuildInfoFile distPref)
+
+
+    -- TODO: catch this error and report something useful.
+    --
+    -- When using stack, an error raised by getPersistBuildConfig that looks like this:
+    --
+    -- packunused: You need to re-run the 'configure' command. The version of Cabal being used has changed (was Cabal-1.22.5.0, now Cabal-1.22.7.0).
+    --
+    -- ...indicates the need to run 'stack setup --upgrade-cabal'
+
     lbi <- getPersistBuildConfig distPref
 
 
@@ -213,7 +233,6 @@ main = do
 
     whenM (not <$> readIORef ok) exitFailure
   where
-    distPref = "./dist"
 
     compIsLib CLib {} = True
     compIsLib _       = False
