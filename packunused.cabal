@@ -71,6 +71,7 @@ source-repository head
 
 executable packunused
   main-is:             packunused.hs
+  other-modules:       Paths_packunused
   default-language:    Haskell2010
   other-extensions:    CPP, RecordWildCards
   ghc-options:         -Wall -fwarn-tabs -fno-warn-unused-do-bind

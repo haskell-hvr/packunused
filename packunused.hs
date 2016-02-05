@@ -18,7 +18,10 @@ import qualified Distribution.ModuleName as MN
 import           Distribution.Package (InstalledPackageId(..), packageId, pkgName)
 import qualified Distribution.PackageDescription as PD
 import           Distribution.Simple.Compiler
-import           Distribution.Simple.Configure (localBuildInfoFile, tryGetPersistBuildConfig, checkPersistBuildConfigOutdated, ConfigStateFileError(..))
+import           Distribution.Simple.Configure (localBuildInfoFile, getPersistBuildConfig, checkPersistBuildConfigOutdated)
+#if MIN_VERSION_Cabal(1,21,0)
+import           Distribution.Simple.Configure (tryGetPersistBuildConfig, ConfigStateFileError(..))
+#endif
 import           Distribution.Simple.LocalBuildInfo
 import           Distribution.Simple.PackageIndex (lookupInstalledPackageId)
 import           Distribution.Simple.Utils (cabalVersion)
@@ -93,6 +96,18 @@ chooseDistPref useStack = do
     then takeWhile (/= '\n') <$> readProcess "stack" (words "path --dist-dir") ""
     else return "dist"
 
+getLbi :: Bool -> FilePath -> IO LocalBuildInfo
+#if MIN_VERSION_Cabal(1,21,0)
+getLbi useStack distPref = either explainError id <$> tryGetPersistBuildConfig distPref
+  where
+    explainError :: ConfigStateFileError -> a
+    explainError x@ConfigStateFileBadVersion{} | useStack = stackExplanation x
+    explainError x = error ("Error: " ++ show x)
+    stackExplanation x = error ("Error: " ++ show x ++ "\n\nYou can probably fix this by running:\n  stack setup --upgrade-cabal")
+#else
+getLbi _ distPref = getPersistBuildConfig distPref
+#endif
+
 main :: IO ()
 main = do
     Opts {..} <- execParser $
@@ -113,13 +128,7 @@ main = do
 
     lbiMTime <- getModificationTime (localBuildInfoFile distPref)
 
-
-    let explainError :: ConfigStateFileError -> a
-        explainError x@ConfigStateFileBadVersion{} | useStack = stackExplanation x
-        explainError x = error ("Error: " ++ show x)
-        stackExplanation x = error ("Error: " ++ show x ++ "\n\nYou can probably fix this by running:\n  stack setup --upgrade-cabal")
-
-    lbi <- either explainError id <$> tryGetPersistBuildConfig distPref
+    lbi <- getLbi useStack distPref
 
     -- minory sanity checking
     case pkgDescrFile lbi of
