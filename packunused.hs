@@ -18,7 +18,7 @@ import qualified Distribution.ModuleName as MN
 import           Distribution.Package (InstalledPackageId(..), packageId, pkgName)
 import qualified Distribution.PackageDescription as PD
 import           Distribution.Simple.Compiler
-import           Distribution.Simple.Configure (localBuildInfoFile, getPersistBuildConfig, checkPersistBuildConfigOutdated)
+import           Distribution.Simple.Configure (localBuildInfoFile, tryGetPersistBuildConfig, checkPersistBuildConfigOutdated, ConfigStateFileError(..))
 import           Distribution.Simple.LocalBuildInfo
 import           Distribution.Simple.PackageIndex (lookupInstalledPackageId)
 import           Distribution.Simple.Utils (cabalVersion)
@@ -55,6 +55,15 @@ helpFooter = mconcat
              "before executing 'packunused':", P.linebreak
 
     , P.hardline
+    , P.text "For stack:"
+    , P.indent 2 $ P.vcat $ P.text <$>
+      [ "stack clean"
+      , "stack build --ghc-options=-ddump-minimal-imports"
+      , "packunused"
+      ]
+
+    , P.hardline
+    , P.text "For cabal:"
     , P.indent 2 $ P.vcat $ P.text <$>
       [ "cabal clean"
       , "rm *.imports        # (only needed for GHC<7.8)"
@@ -78,9 +87,8 @@ helpHeader :: String
 helpHeader = "packunused " ++ showVersion version ++
              " (using Cabal "++ showVersion cabalVersion ++ ")"
 
-chooseDistPref :: IO String
-chooseDistPref = do
-  useStack <- doesFileExist "stack.yaml"
+chooseDistPref :: Bool -> IO String
+chooseDistPref useStack = do
   if useStack
     then takeWhile (/= '\n') <$> readProcess "stack" (words "path --dist-dir") ""
     else return "dist"
@@ -95,7 +103,8 @@ main = do
 
     -- print opts'
 
-    distPref <- chooseDistPref
+    useStack <- doesFileExist "stack.yaml"
+    distPref <- chooseDistPref useStack
 
     lbiExists <- doesFileExist (localBuildInfoFile distPref)
     unless lbiExists $ do
@@ -105,16 +114,12 @@ main = do
     lbiMTime <- getModificationTime (localBuildInfoFile distPref)
 
 
-    -- TODO: catch this error and report something useful.
-    --
-    -- When using stack, an error raised by getPersistBuildConfig that looks like this:
-    --
-    -- packunused: You need to re-run the 'configure' command. The version of Cabal being used has changed (was Cabal-1.22.5.0, now Cabal-1.22.7.0).
-    --
-    -- ...indicates the need to run 'stack setup --upgrade-cabal'
+    let explainError :: ConfigStateFileError -> a
+        explainError x@ConfigStateFileBadVersion{} | useStack = stackExplanation x
+        explainError x = error ("Error: " ++ show x)
+        stackExplanation x = error ("Error: " ++ show x ++ "\n\nYou can probably fix this by running:\n  stack setup --upgrade-cabal")
 
-    lbi <- getPersistBuildConfig distPref
-
+    lbi <- either explainError id <$> tryGetPersistBuildConfig distPref
 
     -- minory sanity checking
     case pkgDescrFile lbi of
