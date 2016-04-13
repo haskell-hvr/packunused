@@ -9,21 +9,18 @@ import           Data.List.Split (splitOn)
 import           Data.Maybe
 import           Data.Monoid
 import           Data.Version (Version(Version), showVersion)
-import           Distribution.InstalledPackageInfo (exposedModules, installedPackageId)
-#if MIN_VERSION_Cabal(1,21,0)
+import           Distribution.InstalledPackageInfo (exposedModules, InstalledPackageInfo)
 import           Distribution.InstalledPackageInfo (exposedName)
-#endif
 import           Distribution.ModuleName (ModuleName)
 import qualified Distribution.ModuleName as MN
-import           Distribution.Package (InstalledPackageId(..), packageId, pkgName)
+import           Distribution.Package (PackageIdentifier, packageId, pkgName)
+import           Distribution.Package (UnitId(..), ComponentId(..), installedUnitId)
 import qualified Distribution.PackageDescription as PD
 import           Distribution.Simple.Compiler
-import           Distribution.Simple.Configure (localBuildInfoFile, getPersistBuildConfig, checkPersistBuildConfigOutdated)
-#if MIN_VERSION_Cabal(1,21,0)
+import           Distribution.Simple.Configure (localBuildInfoFile, checkPersistBuildConfigOutdated)
 import           Distribution.Simple.Configure (tryGetPersistBuildConfig, ConfigStateFileError(..))
-#endif
 import           Distribution.Simple.LocalBuildInfo
-import           Distribution.Simple.PackageIndex (lookupInstalledPackageId)
+import           Distribution.Simple.PackageIndex (lookupUnitId, PackageIndex)
 import           Distribution.Simple.Utils (cabalVersion)
 import           Distribution.Text (display)
 import qualified Language.Haskell.Exts as H
@@ -90,6 +87,17 @@ helpHeader :: String
 helpHeader = "packunused " ++ showVersion version ++
              " (using Cabal "++ showVersion cabalVersion ++ ")"
 
+getInstalledPackageInfos :: [(UnitId, PackageIdentifier)] -> PackageIndex InstalledPackageInfo -> [InstalledPackageInfo]
+getInstalledPackageInfos pkgs ipkgs =
+    [ fromMaybe (error (show ipkgid)) $ lookupUnitId ipkgs ipkgid
+    | (ipkgid, _) <- pkgs
+    , not (isInPlacePackage ipkgid)
+    ]
+  where
+    isInPlacePackage :: UnitId -> Bool
+    isInPlacePackage (SimpleUnitId (ComponentId comp)) =
+        "-inplace" `isSuffixOf` comp
+
 chooseDistPref :: Bool -> IO String
 chooseDistPref useStack = do
   if useStack
@@ -97,16 +105,12 @@ chooseDistPref useStack = do
     else return "dist"
 
 getLbi :: Bool -> FilePath -> IO LocalBuildInfo
-#if MIN_VERSION_Cabal(1,21,0)
 getLbi useStack distPref = either explainError id <$> tryGetPersistBuildConfig distPref
   where
     explainError :: ConfigStateFileError -> a
     explainError x@ConfigStateFileBadVersion{} | useStack = stackExplanation x
     explainError x = error ("Error: " ++ show x)
     stackExplanation x = error ("Error: " ++ show x ++ "\n\nYou can probably fix this by running:\n  stack setup --upgrade-cabal")
-#else
-getLbi _ distPref = getPersistBuildConfig distPref
-#endif
 
 main :: IO ()
 main = do
@@ -127,7 +131,6 @@ main = do
         exitFailure
 
     lbiMTime <- getModificationTime (localBuildInfoFile distPref)
-
     lbi <- getLbi useStack distPref
 
     -- minory sanity checking
@@ -191,22 +194,14 @@ main = do
                                                     , (m,_) <- imps
                                                     ]
 
-            pkgs = componentPackageDeps clbi
-
-            ipinfos = [ fromMaybe (error (show ipkgid)) $ lookupInstalledPackageId ipkgs ipkgid
-                      | (ipkgid@(InstalledPackageId i), _) <- pkgs
-                      , not ("-inplace" `isSuffixOf` i)
-                      ]
+            ipinfos = getInstalledPackageInfos (componentPackageDeps clbi) ipkgs
 
             (ignored, unignored) = partition (\x -> display (pkgName $ packageId x) `elem` ignoredPackages) ipinfos
 
-            unused = [ installedPackageId ipinfo
+            unused :: [UnitId]
+            unused = [ installedUnitId ipinfo
                      | ipinfo <- unignored
-#if MIN_VERSION_Cabal(1,21,0)
                      , let expmods = map exposedName $ exposedModules ipinfo
-#else
-                     , let expmods = exposedModules ipinfo
-#endif
                      , not (any (`elem` allmods) expmods)
                      ]
 
@@ -247,7 +242,6 @@ main = do
 
     whenM (not <$> readIORef ok) exitFailure
   where
-
     compIsLib CLib {} = True
     compIsLib _       = False
 
@@ -275,11 +269,7 @@ main = do
 
         return files
 
-#if MIN_VERSION_Cabal(1,18,0)
     compBuildOrder = map fst . allComponentsInBuildOrder
-#else
-    withAllComponentsInBuildOrder = withComponentsLBI
-#endif
 
 componentNameAndModules :: Bool -> Component -> (String, String, [ModuleName])
 componentNameAndModules addMainMod c  = (n, n2, m)
@@ -293,10 +283,6 @@ componentNameAndModules addMainMod c  = (n, n2, m)
         CTest  ci -> ("testsuite("++PD.testName ci++")", PD.testName ci, [mainModName | addMainMod ])
 
     mainModName = MN.fromString "Main"
-
-#if !MIN_VERSION_Cabal(1,16,0)
-    componentBuildInfo = foldComponent PD.libBuildInfo PD.buildInfo PD.testBuildInfo PD.benchmarkBuildInfo
-#endif
 
 putHeading :: String -> IO ()
 putHeading s = do
@@ -334,11 +320,7 @@ readImports outDir fn = do
     stripExplicitNamespaces = unwords . splitOn " type "
     stripSafe = unwords . splitOn " safe "
 
-#if MIN_VERSION_haskell_src_exts(1,14,0)
     exts = map H.EnableExtension [ H.MagicHash, H.PackageImports, H.CPP, H.TypeOperators, H.TypeFamilies {- , H.ExplicitNamespaces -} ]
-#else
-    exts = [ H.MagicHash, H.PackageImports, H.CPP, H.TypeOperators, H.TypeFamilies ]
-#endif
 
 -- | Find if a file exists in the current directory or any of its
 -- parents.
