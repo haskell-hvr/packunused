@@ -19,6 +19,9 @@ import           Distribution.Package (InstalledPackageId(..), packageId, pkgNam
 import qualified Distribution.PackageDescription as PD
 import           Distribution.Simple.Compiler
 import           Distribution.Simple.Configure (localBuildInfoFile, getPersistBuildConfig, checkPersistBuildConfigOutdated)
+#if MIN_VERSION_Cabal(1,21,0)
+import           Distribution.Simple.Configure (tryGetPersistBuildConfig, ConfigStateFileError(..))
+#endif
 import           Distribution.Simple.LocalBuildInfo
 import           Distribution.Simple.PackageIndex (lookupInstalledPackageId)
 import           Distribution.Simple.Utils (cabalVersion)
@@ -30,6 +33,7 @@ import qualified Options.Applicative.Help.Pretty as P
 import           System.Directory (getModificationTime, getDirectoryContents, doesDirectoryExist, doesFileExist)
 import           System.Exit (exitFailure)
 import           System.FilePath ((</>))
+import           System.Process
 
 import           Paths_packunused (version)
 
@@ -54,6 +58,15 @@ helpFooter = mconcat
              "before executing 'packunused':", P.linebreak
 
     , P.hardline
+    , P.text "For stack:"
+    , P.indent 2 $ P.vcat $ P.text <$>
+      [ "stack clean"
+      , "stack build --ghc-options=-ddump-minimal-imports"
+      , "packunused"
+      ]
+
+    , P.hardline
+    , P.text "For cabal:"
     , P.indent 2 $ P.vcat $ P.text <$>
       [ "cabal clean"
       , "rm *.imports        # (only needed for GHC<7.8)"
@@ -77,6 +90,24 @@ helpHeader :: String
 helpHeader = "packunused " ++ showVersion version ++
              " (using Cabal "++ showVersion cabalVersion ++ ")"
 
+chooseDistPref :: Bool -> IO String
+chooseDistPref useStack = do
+  if useStack
+    then takeWhile (/= '\n') <$> readProcess "stack" (words "path --dist-dir") ""
+    else return "dist"
+
+getLbi :: Bool -> FilePath -> IO LocalBuildInfo
+#if MIN_VERSION_Cabal(1,21,0)
+getLbi useStack distPref = either explainError id <$> tryGetPersistBuildConfig distPref
+  where
+    explainError :: ConfigStateFileError -> a
+    explainError x@ConfigStateFileBadVersion{} | useStack = stackExplanation x
+    explainError x = error ("Error: " ++ show x)
+    stackExplanation x = error ("Error: " ++ show x ++ "\n\nYou can probably fix this by running:\n  stack setup --upgrade-cabal")
+#else
+getLbi _ distPref = getPersistBuildConfig distPref
+#endif
+
 main :: IO ()
 main = do
     Opts {..} <- execParser $
@@ -87,14 +118,17 @@ main = do
 
     -- print opts'
 
+    useStack <- doesFileExist "stack.yaml"
+    distPref <- chooseDistPref useStack
+
     lbiExists <- doesFileExist (localBuildInfoFile distPref)
     unless lbiExists $ do
         putStrLn "*ERROR* package not properly configured yet or not in top-level CABAL project folder; see --help for more details"
         exitFailure
 
     lbiMTime <- getModificationTime (localBuildInfoFile distPref)
-    lbi <- getPersistBuildConfig distPref
 
+    lbi <- getLbi useStack distPref
 
     -- minory sanity checking
     case pkgDescrFile lbi of
@@ -213,7 +247,6 @@ main = do
 
     whenM (not <$> readIORef ok) exitFailure
   where
-    distPref = "./dist"
 
     compIsLib CLib {} = True
     compIsLib _       = False
