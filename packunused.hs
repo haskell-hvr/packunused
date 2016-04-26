@@ -30,9 +30,9 @@ import qualified Language.Haskell.Exts as H
 import           Options.Applicative
 import           Options.Applicative.Help.Pretty (Doc)
 import qualified Options.Applicative.Help.Pretty as P
-import           System.Directory (getModificationTime, getDirectoryContents, doesDirectoryExist, doesFileExist)
+import           System.Directory (getModificationTime, getDirectoryContents, doesDirectoryExist, doesFileExist, getCurrentDirectory)
 import           System.Exit (exitFailure)
-import           System.FilePath ((</>))
+import           System.FilePath ((</>), takeDirectory)
 import           System.Process
 
 import           Paths_packunused (version)
@@ -118,7 +118,7 @@ main = do
 
     -- print opts'
 
-    useStack <- doesFileExist "stack.yaml"
+    useStack <- findRecursive "stack.yaml"
     distPref <- chooseDistPref useStack
 
     lbiExists <- doesFileExist (localBuildInfoFile distPref)
@@ -340,6 +340,22 @@ readImports outDir fn = do
     exts = [ H.MagicHash, H.PackageImports, H.CPP, H.TypeOperators, H.TypeFamilies ]
 #endif
 
+-- | Find if a file exists in the current directory or any of its
+-- parents.
+findRecursive :: FilePath -> IO Bool
+findRecursive f = do
+  dir <- getCurrentDirectory
+  go dir
+  where
+    go dir = do
+      exists <- doesFileExist (dir </> f)
+      if exists
+      then return exists
+      else
+        let parent = takeDirectory dir
+        in if parent == dir
+           then return False
+           else go parent
 
 whenM :: Monad m => m Bool -> m () -> m ()
 whenM test = (test >>=) . flip when
