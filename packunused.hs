@@ -300,18 +300,25 @@ readImports outDir fn = do
 
     contents <- readFile (outDir </> fn)
     case parseImportsFile contents of
-        (H.ParseOk (H.Module _ _ _ _ _ imps _)) -> do
+        (H.ParseOk (H.Module _ _ _ imps _)) -> do
             let imps' = [ (MN.fromString mn, extractSpecs (H.importSpecs imp))
-                        | imp <- imps, let H.ModuleName mn = H.importModule imp ]
+                        | imp <- imps, let H.ModuleName _ mn = H.importModule imp ]
 
             return (m, imps')
+        (H.ParseOk (H.XmlPage _ _ _ _ _ _ _)) -> do
+            putStrLn "*ERROR* .imports file is invalid file type"
+            exitFailure
+        (H.ParseOk (H.XmlHybrid _ _ _ _ _ _ _ _ _)) -> do
+            putStrLn "*ERROR* .imports file is invalid file type"
+            exitFailure
         H.ParseFailed loc msg -> do
             putStrLn "*ERROR* failed to parse .imports file"
             putStrLn $ H.prettyPrint loc ++ ": " ++ msg
             exitFailure
 
   where
-    extractSpecs (Just (False, impspecs)) = map H.prettyPrint impspecs
+    extractSpecs :: Maybe (H.ImportSpecList s) -> [String]
+    extractSpecs (Just (H.ImportSpecList _ _ impspecs)) = map H.prettyPrint impspecs
     extractSpecs _ = error "unexpected import specs"
 
     parseImportsFile = H.parseFileContentsWithMode (H.defaultParseMode { H.extensions = exts, H.parseFilename = outDir </> fn }) . stripExplicitNamespaces . stripSafe
