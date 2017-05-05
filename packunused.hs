@@ -89,9 +89,10 @@ helpHeader = "packunused " ++ showVersion version ++
 
 getInstalledPackageInfos :: [(UnitId, PackageIdentifier)] -> PackageIndex InstalledPackageInfo -> [InstalledPackageInfo]
 getInstalledPackageInfos pkgs ipkgs =
-    [ fromMaybe (error (show ipkgid)) $ lookupUnitId ipkgs ipkgid
+    [ ipi
     | (ipkgid, _) <- pkgs
     , not (isInPlacePackage ipkgid)
+    , Just ipi <- [lookupUnitId ipkgs ipkgid]
     ]
   where
     isInPlacePackage :: UnitId -> Bool
