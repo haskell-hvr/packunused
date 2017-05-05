@@ -1,3 +1,8 @@
+# 0.1.2
+
+ - Add support for `Cabal-1.24` (and drop support for previous Cabal versions)
+ - Add experimental support for Stack
+
 # 0.1.1.4
 
  - Add support for `Cabal-1.22.*` and `base-4.8.*`
