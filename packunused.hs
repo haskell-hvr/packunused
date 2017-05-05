@@ -55,14 +55,6 @@ helpFooter = mconcat
              "before executing 'packunused':", P.linebreak
 
     , P.hardline
-    , P.text "For stack:"
-    , P.indent 2 $ P.vcat $ P.text <$>
-      [ "stack clean"
-      , "stack build --ghc-options=-ddump-minimal-imports"
-      , "packunused"
-      ]
-
-    , P.hardline
     , P.text "For cabal:"
     , P.indent 2 $ P.vcat $ P.text <$>
       [ "cabal clean"
@@ -71,6 +63,15 @@ helpFooter = mconcat
       , "cabal build --ghc-option=-ddump-minimal-imports"
       , "packunused"
       ]
+
+    , P.linebreak, P.hardline
+    , P.text "For stack:"
+    , P.indent 2 $ P.vcat $ P.text <$>
+      [ "stack clean"
+      , "stack build --ghc-options=-ddump-minimal-imports"
+      , "packunused"
+      ]
+
     , P.linebreak, P.hardline
     , P.text "Note:" P.<+> P.align
       (para $ "The 'cabal configure' command above only tests the default package configuration. " ++

@@ -32,9 +32,9 @@ description:
   > cabal build --ghc-option=-ddump-minimal-imports
   > packunused
   .
-  Alternatively:
+  Experimental support for @stack@:
   .
-  > # stack setup --upgrade-cabal'  # necessary only when stack's global "Cabal" installation is out of date
+  > stack setup --upgrade-cabal  # necessary only when stack's global Cabal installation is out of date
   > stack clean
   > stack build --ghc-options '-ddump-minimal-imports -O0'
   > packunused
