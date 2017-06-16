@@ -50,6 +50,7 @@ install:
  - travis_retry cabal update -v
  - sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
  - cabal new-build ${TEST} ${BENCH} --dep -j2
+ - cabal new-build ${TEST} ${BENCH} --dep -j2 --constraint 'optparse-applicative == 0.12.*'
 
 # Here starts the actual work to be performed for the package under test;
 # any command which exits with a non-zero exit code causes the build to fail.
@@ -57,6 +58,7 @@ script:
  - if [ -f configure.ac ]; then autoreconf -i; fi
  # this builds all libraries and executables (including tests/benchmarks)
  - cabal new-build ${TEST} ${BENCH}
+ - cabal new-build ${TEST} ${BENCH} --constraint 'optparse-applicative == 0.12.*'
 
  # there's no 'cabal new-test' yet, so let's emulate for now
  - SRC_BASENAME=$(cabal info . | awk '{print $2;exit}')
