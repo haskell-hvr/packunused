@@ -47,8 +47,8 @@ opts = Opts <$> switch (long "ignore-empty-imports" <> help "ignore empty .impor
             <*> many (strOption (long "ignore-package" <> metavar "PKG" <>
                                  help "ignore the specfied package in the report"))
 
-helpFooter :: Doc
-helpFooter = mconcat
+usageFooter :: Doc
+usageFooter = mconcat
     [ P.text "Tool to help find redundant build-dependencies in CABAL projects", P.linebreak
     , P.hardline
     , para $ "In order to use this tool you should set up the package to be analyzed as follows, " ++
@@ -84,8 +84,8 @@ helpFooter = mconcat
   where
     para = P.fillSep . map P.text . words
 
-helpHeader :: String
-helpHeader = "packunused " ++ showVersion version ++
+usageHeader :: String
+usageHeader = "packunused " ++ showVersion version ++
              " (using Cabal "++ showVersion cabalVersion ++ ")"
 
 getInstalledPackageInfos :: [(UnitId, PackageIdentifier)] -> PackageIndex InstalledPackageInfo -> [InstalledPackageInfo]
@@ -118,9 +118,9 @@ main :: IO ()
 main = do
     Opts {..} <- execParser $
                  info (helper <*> opts)
-                      (header helpHeader <>
+                      (header usageHeader <>
                        fullDesc <>
-                       footerDoc (Just helpFooter))
+                       footerDoc (Just usageFooter))
 
     -- print opts'
 
