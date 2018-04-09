@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, RecordWildCards #-}
+{-# LANGUAGE CPP, RecordWildCards, LambdaCase #-}
 
 module Main where
 
@@ -8,21 +8,23 @@ import           Data.List
 import           Data.List.Split (splitOn)
 import           Data.Maybe
 import           Data.Monoid
-import           Data.Version (Version(Version), showVersion)
-import           Distribution.InstalledPackageInfo (exposedModules, InstalledPackageInfo)
-import           Distribution.InstalledPackageInfo (exposedName)
+import qualified Data.Version as V(showVersion)
+import           Distribution.InstalledPackageInfo (exposedName, exposedModules, InstalledPackageInfo)
 import           Distribution.ModuleName (ModuleName)
 import qualified Distribution.ModuleName as MN
-import           Distribution.Package (PackageIdentifier, packageId, pkgName)
-import           Distribution.Package (UnitId(..), ComponentId(..), installedUnitId)
+import           Distribution.Package (UnitId, unUnitId, installedUnitId, packageId, pkgName)
 import qualified Distribution.PackageDescription as PD
 import           Distribution.Simple.Compiler
-import           Distribution.Simple.Configure (localBuildInfoFile, checkPersistBuildConfigOutdated)
-import           Distribution.Simple.Configure (tryGetPersistBuildConfig, ConfigStateFileError(..))
+import           Distribution.Simple.Configure (tryGetPersistBuildConfig, ConfigStateFileError(..)
+                                               ,localBuildInfoFile, checkPersistBuildConfigOutdated)
 import           Distribution.Simple.LocalBuildInfo
 import           Distribution.Simple.PackageIndex (lookupUnitId, PackageIndex)
 import           Distribution.Simple.Utils (cabalVersion)
 import           Distribution.Text (display)
+import           Distribution.Types.ForeignLib(ForeignLib(..))
+import           Distribution.Types.MungedPackageId(MungedPackageId(..))
+import           Distribution.Types.UnqualComponentName(unUnqualComponentName)
+import           Distribution.Version(showVersion, mkVersion)
 import qualified Language.Haskell.Exts as H
 import           Options.Applicative
 import           Options.Applicative.Help.Pretty (Doc)
@@ -85,10 +87,10 @@ usageFooter = mconcat
     para = P.fillSep . map P.text . words
 
 usageHeader :: String
-usageHeader = "packunused " ++ showVersion version ++
+usageHeader = "packunused " ++ V.showVersion version ++
              " (using Cabal "++ showVersion cabalVersion ++ ")"
 
-getInstalledPackageInfos :: [(UnitId, PackageIdentifier)] -> PackageIndex InstalledPackageInfo -> [InstalledPackageInfo]
+getInstalledPackageInfos :: [(UnitId, MungedPackageId)] -> PackageIndex InstalledPackageInfo -> [InstalledPackageInfo]
 getInstalledPackageInfos pkgs ipkgs =
     [ ipi
     | (ipkgid, _) <- pkgs
@@ -97,11 +99,11 @@ getInstalledPackageInfos pkgs ipkgs =
     ]
   where
     isInPlacePackage :: UnitId -> Bool
-    isInPlacePackage (SimpleUnitId (ComponentId comp)) =
-        "-inplace" `isSuffixOf` comp
+    isInPlacePackage u =
+        "-inplace" `isSuffixOf` unUnitId u
 
 chooseDistPref :: Bool -> IO String
-chooseDistPref useStack = do
+chooseDistPref useStack =
   if useStack
     then takeWhile (/= '\n') <$> readProcess "stack" (words "path --dist-dir") ""
     else return "dist"
@@ -142,12 +144,19 @@ main = do
             res <- checkPersistBuildConfigOutdated distPref pkgDescFile
             when res $ putStrLn "*WARNING* outdated config-data -- please re-configure"
 
-    let cbo = compBuildOrder lbi
+    let cbo = map
+          (\case
+              LibComponentLocalBuildInfo {componentLocalName = n} -> n
+              FLibComponentLocalBuildInfo {componentLocalName = n} -> n
+              ExeComponentLocalBuildInfo {componentLocalName = n} -> n
+              TestComponentLocalBuildInfo {componentLocalName = n} -> n
+              BenchComponentLocalBuildInfo {componentLocalName = n} -> n
+              ) $ allComponentsInBuildOrder lbi
         pkg = localPkgDescr lbi
         ipkgs = installedPkgs lbi
 
     importsInOutDir <- case compilerId (compiler lbi) of
-        CompilerId GHC (Version v _) | v >= [7,8] -> return True
+        CompilerId GHC v | v >= mkVersion [7,8] -> return True
         CompilerId GHC _ -> return False
         CompilerId _ _ -> putStrLn "*WARNING* non-GHC compiler detected" >> return False
 
@@ -155,14 +164,21 @@ main = do
 
     when (isJust $ PD.library pkg) $
         putStrLn $ " - library" ++ [ '*' | CLibName `notElem` cbo ]
+
+    unless (null $ PD.subLibraries pkg) $
+        putStrLn $ " - sub lib(s): " ++ unwords [ maybe "Nothing" unUnqualComponentName mayN ++ [ '*' | maybe True (flip notElem cbo . CSubLibName) mayN ]
+                                                   | PD.Library { libName = mayN } <- PD.subLibraries pkg ]
+    unless (null $ PD.foreignLibs pkg) $
+        putStrLn $ " - foreign lib(s): " ++ unwords [ unUnqualComponentName n ++ [ '*' | CFLibName n `notElem` cbo ]
+                                                   | ForeignLib { foreignLibName = n } <- PD.foreignLibs pkg ]
     unless (null $ PD.executables pkg) $
-        putStrLn $ " - executable(s): " ++ unwords [ n ++ [ '*' | CExeName n `notElem` cbo ]
+        putStrLn $ " - executable(s): " ++ unwords [ unUnqualComponentName n ++ [ '*' | CExeName n `notElem` cbo ]
                                                    | PD.Executable { exeName = n } <- PD.executables pkg ]
     unless (null $ PD.testSuites pkg) $
-        putStrLn $ " - testsuite(s): " ++ unwords [ n ++ [ '*' | CTestName n `notElem` cbo ]
+        putStrLn $ " - testsuite(s): " ++ unwords [ unUnqualComponentName n ++ [ '*' | CTestName n `notElem` cbo ]
                                                   | PD.TestSuite { testName = n } <- PD.testSuites pkg ]
     unless (null $ PD.benchmarks pkg) $
-        putStrLn $ " - benchmark(s): " ++ unwords [ n ++ [ '*' | CBenchName n `notElem` cbo ]
+        putStrLn $ " - benchmark(s): " ++ unwords [ unUnqualComponentName n ++ [ '*' | CBenchName n `notElem` cbo ]
                                                   | PD.Benchmark { benchmarkName = n} <- PD.benchmarks pkg ]
 
     putStrLn ""
@@ -271,8 +287,6 @@ main = do
 
         return files
 
-    compBuildOrder = map fst . allComponentsInBuildOrder
-
 componentNameAndModules :: Bool -> Component -> (String, String, [ModuleName])
 componentNameAndModules addMainMod c  = (n, n2, m)
   where
@@ -280,9 +294,14 @@ componentNameAndModules addMainMod c  = (n, n2, m)
 
     (n, n2, m0) = case c of
         CLib   ci -> ("library", "", PD.exposedModules ci)
-        CExe   ci -> ("executable("++PD.exeName ci++")", PD.exeName ci, [mainModName | addMainMod ])
-        CBench ci -> ("benchmark("++PD.benchmarkName ci++")", PD.benchmarkName ci, [mainModName | addMainMod ])
-        CTest  ci -> ("testsuite("++PD.testName ci++")", PD.testName ci, [mainModName | addMainMod ])
+        CFLib  ci -> let name = unUnqualComponentName (foreignLibName ci)
+                     in ("foreignLib("++name++")", name, [mainModName | addMainMod ])
+        CExe   ci -> let name = unUnqualComponentName (PD.exeName ci)
+                     in ("executable("++name++")", name, [mainModName | addMainMod ])
+        CBench ci -> let name = unUnqualComponentName (PD.benchmarkName ci)
+                     in ("benchmark("++name++")", name, [mainModName | addMainMod ])
+        CTest  ci -> let name = unUnqualComponentName (PD.testName ci)
+                     in ("testsuite("++name++")", name, [mainModName | addMainMod ])
 
     mainModName = MN.fromString "Main"
 
