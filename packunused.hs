@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, RecordWildCards, LambdaCase #-}
+{-# LANGUAGE CPP, RecordWildCards #-}
 
 module Main where
 
@@ -145,7 +145,7 @@ main = do
             when res $ putStrLn "*WARNING* outdated config-data -- please re-configure"
 
     let cbo = map
-          (\case
+          (\x -> case x of
               LibComponentLocalBuildInfo {componentLocalName = n} -> n
               FLibComponentLocalBuildInfo {componentLocalName = n} -> n
               ExeComponentLocalBuildInfo {componentLocalName = n} -> n
